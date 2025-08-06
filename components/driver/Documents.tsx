@@ -4,7 +4,7 @@ import { useState, useRef, ChangeEvent } from 'react';
 import { FaIdCard, FaFileAlt, FaCar, FaCamera, FaUpload, FaArrowLeft, FaCheck } from 'react-icons/fa';
 import { useDriverForm } from '@/app/context/DriverFormContext';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface FileWithPreview {
   file: File;
@@ -13,7 +13,12 @@ interface FileWithPreview {
 
 export default function Documents() {
   const { formData, setDocumentsData, submitAllData, isLoading, error } = useDriverForm();
-  
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Example usage of useSearchParams (customize as needed)
+  // const someParam = searchParams.get('someParam');
+
   // Initialize state with FileWithPreview or null
   const [licenseFront, setLicenseFront] = useState<FileWithPreview | null>(null);
   const [licenseBack, setLicenseBack] = useState<FileWithPreview | null>(null);
@@ -23,14 +28,13 @@ export default function Documents() {
   const [regExpiry, setRegExpiry] = useState(formData.documents.registration.expiry);
   const [idFront, setIdFront] = useState<FileWithPreview | null>(null);
   const [idBack, setIdBack] = useState<FileWithPreview | null>(null);
-  
+
   const licenseFrontRef = useRef<HTMLInputElement>(null);
   const licenseBackRef = useRef<HTMLInputElement>(null);
   const regFrontRef = useRef<HTMLInputElement>(null);
   const regBackRef = useRef<HTMLInputElement>(null);
   const idFrontRef = useRef<HTMLInputElement>(null);
   const idBackRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
 
   const handleImageUpload = (
     e: ChangeEvent<HTMLInputElement>,
@@ -39,57 +43,63 @@ export default function Documents() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const reader = new FileReader();
-      
+
       reader.onloadend = () => {
         const preview = reader.result as string;
         const fileWithPreview: FileWithPreview = {
           file,
-          preview
+          preview,
         };
 
-        switch(type) {
-          case 'licenseFront': 
+        switch (type) {
+          case 'licenseFront':
             setLicenseFront(fileWithPreview);
             updateDocumentsData('license', { front: fileWithPreview });
             break;
-          case 'licenseBack': 
+          case 'licenseBack':
             setLicenseBack(fileWithPreview);
             updateDocumentsData('license', { back: fileWithPreview });
             break;
-          case 'regFront': 
+          case 'regFront':
             setRegFront(fileWithPreview);
             updateDocumentsData('registration', { front: fileWithPreview });
             break;
-          case 'regBack': 
+          case 'regBack':
             setRegBack(fileWithPreview);
             updateDocumentsData('registration', { back: fileWithPreview });
             break;
-          case 'idFront': 
+          case 'idFront':
             setIdFront(fileWithPreview);
             updateDocumentsData('nationalId', { front: fileWithPreview });
             break;
-          case 'idBack': 
+          case 'idBack':
             setIdBack(fileWithPreview);
             updateDocumentsData('nationalId', { back: fileWithPreview });
             break;
         }
       };
-      
+
       reader.readAsDataURL(file);
     }
   };
 
-  const updateDocumentsData = (section: 'license' | 'registration' | 'nationalId', data: any) => {
+  const updateDocumentsData = (
+    section: 'license' | 'registration' | 'nationalId',
+    data: any
+  ) => {
     setDocumentsData({
       ...formData.documents,
       [section]: {
         ...formData.documents[section],
-        ...data
-      }
+        ...data,
+      },
     });
   };
 
-  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>, section: 'license' | 'registration') => {
+  const handleExpiryChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    section: 'license' | 'registration'
+  ) => {
     const value = e.target.value;
     if (section === 'license') {
       setLicenseExpiry(value);
@@ -114,14 +124,20 @@ export default function Documents() {
     }
   };
 
-  const isFormComplete = licenseFront && licenseBack && licenseExpiry && 
-                        regFront && regBack && regExpiry && 
-                        idFront && idBack;
+  const isFormComplete =
+    licenseFront &&
+    licenseBack &&
+    licenseExpiry &&
+    regFront &&
+    regBack &&
+    regExpiry &&
+    idFront &&
+    idBack;
 
   return (
     <div className="max-w-md mx-auto p-6 bg-white rounded-xl shadow-lg overflow-hidden md:max-w-2xl border border-gray-200">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Upload Documents</h2>
-      
+
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Driver's License Section */}
         <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -129,7 +145,7 @@ export default function Documents() {
             <FaIdCard className="text-purple-600 text-xl" />
             <h3 className="text-lg font-semibold text-gray-800">Driver's License</h3>
           </div>
-          
+
           {/* Front Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Front Side</label>
@@ -137,7 +153,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {licenseFront ? (
-                    <img src={licenseFront.preview} alt="License front" className="w-full h-full object-cover" />
+                    <img
+                      src={licenseFront.preview}
+                      alt="License front"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaIdCard className="text-gray-400 text-xl" />
                   )}
@@ -168,7 +188,7 @@ export default function Documents() {
               </button>
             </div>
           </div>
-          
+
           {/* Back Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Back Side</label>
@@ -176,7 +196,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {licenseBack ? (
-                    <img src={licenseBack.preview} alt="License back" className="w-full h-full object-cover" />
+                    <img
+                      src={licenseBack.preview}
+                      alt="License back"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaIdCard className="text-gray-400 text-xl" />
                   )}
@@ -207,10 +231,13 @@ export default function Documents() {
               </button>
             </div>
           </div>
-          
+
           {/* Expiry Date */}
           <div>
-            <label htmlFor="licenseExpiry" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="licenseExpiry"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Expiry Date (MM/YYYY)
             </label>
             <input
@@ -231,7 +258,7 @@ export default function Documents() {
             <FaCar className="text-purple-600 text-xl" />
             <h3 className="text-lg font-semibold text-gray-800">Vehicle Registration Certificate</h3>
           </div>
-          
+
           {/* Front Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Front Side</label>
@@ -239,7 +266,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {regFront ? (
-                    <img src={regFront.preview} alt="Registration front" className="w-full h-full object-cover" />
+                    <img
+                      src={regFront.preview}
+                      alt="Registration front"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaFileAlt className="text-gray-400 text-xl" />
                   )}
@@ -270,7 +301,7 @@ export default function Documents() {
               </button>
             </div>
           </div>
-          
+
           {/* Back Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Back Side</label>
@@ -278,7 +309,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {regBack ? (
-                    <img src={regBack.preview} alt="Registration back" className="w-full h-full object-cover" />
+                    <img
+                      src={regBack.preview}
+                      alt="Registration back"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaFileAlt className="text-gray-400 text-xl" />
                   )}
@@ -309,10 +344,13 @@ export default function Documents() {
               </button>
             </div>
           </div>
-          
+
           {/* Expiry Date */}
           <div>
-            <label htmlFor="regExpiry" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="regExpiry"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Expiry Date (MM/YYYY)
             </label>
             <input
@@ -333,7 +371,7 @@ export default function Documents() {
             <FaIdCard className="text-purple-600 text-xl" />
             <h3 className="text-lg font-semibold text-gray-800">National ID</h3>
           </div>
-          
+
           {/* Front Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Front Side</label>
@@ -341,7 +379,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {idFront ? (
-                    <img src={idFront.preview} alt="ID front" className="w-full h-full object-cover" />
+                    <img
+                      src={idFront.preview}
+                      alt="ID front"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaIdCard className="text-gray-400 text-xl" />
                   )}
@@ -372,7 +414,7 @@ export default function Documents() {
               </button>
             </div>
           </div>
-          
+
           {/* Back Image */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Back Side</label>
@@ -380,7 +422,11 @@ export default function Documents() {
               <div className="relative">
                 <div className="w-24 h-16 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border border-gray-300">
                   {idBack ? (
-                    <img src={idBack.preview} alt="ID back" className="w-full h-full object-cover" />
+                    <img
+                      src={idBack.preview}
+                      alt="ID back"
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <FaIdCard className="text-gray-400 text-xl" />
                   )}
@@ -415,7 +461,7 @@ export default function Documents() {
 
         {/* Navigation Buttons */}
         <div className="flex justify-between">
-          <Link 
+          <Link
             href="/driver/vehicle"
             className="flex items-center justify-center px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-200 shadow-lg hover:shadow-xl"
           >
