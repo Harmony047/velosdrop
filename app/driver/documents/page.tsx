@@ -1,11 +1,14 @@
 // app/driver/documents/page.tsx
-'use client';
-import Documents from "@/components/driver/Documents";
+import { Suspense } from 'react';
+import Loading from '@/app/driver/documents/loading';
+import Documents from '@/components/driver/Documents';
 
 export default function Page() {
   return (
     <div className="container mx-auto p-4">
-      <Documents />
+      <Suspense fallback={<Loading />}>
+        <Documents />
+      </Suspense>
     </div>
   );
 }
