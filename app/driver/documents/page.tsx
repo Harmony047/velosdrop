@@ -1,4 +1,3 @@
-// app/driver/documents/page.tsx
 import { Suspense } from 'react';
 import Loading from '@/app/driver/documents/loading';
 import Documents from '@/components/driver/Documents';
