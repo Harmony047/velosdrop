@@ -9,53 +9,46 @@ export default function Wallet() {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchWalletData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const turso = createClient({
-        url: process.env.TURSO_CONNECTION_URL!,
-        authToken: process.env.TURSO_AUTH_TOKEN!,
-      });
-
-      // Enable foreign key constraints
-      await turso.execute("PRAGMA foreign_keys = ON");
-
-      const driverId = 1; // In real app, get from auth/session
-      
-      const [balanceResult, txResult] = await Promise.all([
-        turso.execute({
-          sql: 'SELECT balance FROM drivers WHERE id = ?',
-          args: [driverId]
-        }),
-        turso.execute({
-          sql: 'SELECT * FROM driver_transactions WHERE driver_id = ? ORDER BY created_at DESC LIMIT 5',
-          args: [driverId]
-        })
-      ]);
-      
-      if (balanceResult.rows.length > 0) {
-        const rawBalance = balanceResult.rows[0].balance as number;
-        setBalance(rawBalance / 100); // Convert cents to dollars
-      }
-
-      setTransactions(txResult.rows);
-    } catch (err) {
-      console.error('Failed to fetch wallet data:', err);
-      setError('Failed to load wallet data. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    fetchWalletData();
-    
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchWalletData, 30000);
+    const fetchData = async () => {
+      try {
+        const turso = createClient({
+          url: process.env.TURSO_CONNECTION_URL!,
+          authToken: process.env.TURSO_AUTH_TOKEN!,
+        });
+
+        // In a real app, get driver ID from auth/session
+        const driverId = 1;
+        
+        // Fetch balance
+        const balanceResult = await turso.execute({
+          sql: 'SELECT balance FROM drivers WHERE id = ?',
+          args: [driverId]
+        });
+        
+        if (balanceResult.rows.length > 0) {
+          setBalance(balanceResult.rows[0].balance as number / 100); // Convert cents to dollars
+        }
+
+        // Fetch transactions
+        const txResult = await turso.execute({
+          sql: 'SELECT * FROM driver_transactions WHERE driver_id = ? ORDER BY created_at DESC LIMIT 5',
+          args: [driverId]
+        });
+        
+        setTransactions(txResult.rows);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    // Set up polling for real-time updates
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -82,21 +75,6 @@ export default function Wallet() {
             </Link>
           </div>
         </div>
-
-        {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Payment Methods */}
         <div>
