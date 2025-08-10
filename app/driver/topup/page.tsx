@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import CheckoutPage from "@/components/driver/CheckoutPage";
-import convertToSubcurrency from "@/lib/convertToSubcurrency";
 
 // Validate Stripe public key
 if (!process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY) {
@@ -18,6 +17,7 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY);
 export default function TopUp() {
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [clientSecret, setClientSecret] = useState<string>('');
   const [selectedMethod, setSelectedMethod] = useState<'card' | 'mobile' | null>(null);
@@ -25,56 +25,74 @@ export default function TopUp() {
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setAmount(value);
-    
-    if (error) setError('');
-    
-    if (value) {
-      const numValue = parseFloat(value);
-      if (isNaN(numValue) || numValue < 2 || numValue > 100) {
-        setError('Please enter an amount between $2 and $100');
-      }
+    // Allow empty value or valid numbers
+    if (value === '' || /^[0-9]*\.?[0-9]*$/.test(value)) {
+      setAmount(value);
+      if (error) setError('');
     }
   };
 
-  const handlePaymentMethodSelect = async (method: 'card' | 'mobile') => {
+  const validateAmount = (): boolean => {
     if (!amount) {
       setError('Please enter an amount');
-      return;
+      return false;
     }
     
     const numValue = parseFloat(amount);
     if (isNaN(numValue)) {
       setError('Please enter a valid number');
-      return;
+      return false;
     }
     
     if (numValue < 2 || numValue > 100) {
-      setError('Amount must be between $2 and $100');
-      return;
+      setError('Amount must be between $2.00 and $100.00');
+      return false;
     }
+    
+    return true;
+  };
+
+  const handlePaymentMethodSelect = async (method: 'card' | 'mobile') => {
+    if (!validateAmount()) return;
 
     try {
+      setIsProcessing(true);
+      setError('');
+
+      const amountInCents = Math.round(parseFloat(amount) * 100);
       const response = await fetch('/api/create-payment-intent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: convertToSubcurrency(numValue) }),
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          amount: amountInCents,
+          driverId: 1, // In production, get from auth/session
+          currency: 'usd'
+        }),
       });
       
-      if (!response.ok) throw new Error('Failed to create payment intent');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Payment failed');
+      }
       
       const { clientSecret } = await response.json();
       setClientSecret(clientSecret);
       setSelectedMethod(method);
       setShowCheckout(true);
     } catch (err) {
-      setError('Failed to initialize payment. Please try again.');
+      console.error('Payment initialization error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to initialize payment');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleBackToPaymentMethods = () => {
     setShowCheckout(false);
     setSelectedMethod(null);
+    setError('');
   };
 
   return (
@@ -85,6 +103,7 @@ export default function TopUp() {
             <button 
               onClick={showCheckout ? handleBackToPaymentMethods : () => router.push('/driver/wallet')}
               className="hover:opacity-80 transition"
+              disabled={isProcessing}
             >
               <FiArrowLeft className="w-5 h-5" />
             </button>
@@ -98,6 +117,21 @@ export default function TopUp() {
         </div>
 
         <div className="p-6 space-y-6">
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {!showCheckout ? (
             <>
               <div>
@@ -109,7 +143,8 @@ export default function TopUp() {
                     <FiDollarSign className="h-5 w-5 text-gray-400" />
                   </div>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     name="amount"
                     id="amount"
                     min="2"
@@ -120,13 +155,13 @@ export default function TopUp() {
                       error ? 'border-red-500' : 'border-gray-300'
                     } rounded-md text-gray-900`}
                     placeholder="0.00"
+                    disabled={isProcessing}
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                     <span className="text-gray-500">USD</span>
                   </div>
                 </div>
-                {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
-                <p className="mt-1 text-xs text-gray-500">Minimum $2 - Maximum $100</p>
+                <p className="mt-1 text-xs text-gray-500">Minimum $2.00 - Maximum $100.00</p>
               </div>
 
               <div>
@@ -135,15 +170,17 @@ export default function TopUp() {
                   <div 
                     className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                       selectedMethod === 'card' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'
+                    } ${
+                      isProcessing ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
-                    onClick={() => handlePaymentMethodSelect('card')}
+                    onClick={() => !isProcessing && handlePaymentMethodSelect('card')}
                   >
                     <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center text-white mr-4">
                       <FiCreditCard className="w-5 h-5" />
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-900">Credit/Debit Card</h4>
-                      <p className="text-sm text-gray-600">Visa, Mastercard</p>
+                      <p className="text-sm text-gray-600">Visa, Mastercard, etc.</p>
                     </div>
                     {selectedMethod === 'card' && (
                       <div className="w-5 h-5 rounded-full border-2 border-purple-500 flex items-center justify-center">
@@ -155,8 +192,10 @@ export default function TopUp() {
                   <div 
                     className={`flex items-center p-4 border rounded-lg cursor-pointer ${
                       selectedMethod === 'mobile' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'
+                    } ${
+                      isProcessing ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
-                    onClick={() => handlePaymentMethodSelect('mobile')}
+                    onClick={() => !isProcessing && handlePaymentMethodSelect('mobile')}
                   >
                     <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white mr-4">
                       <FiArrowUpRight className="w-5 h-5" />
@@ -183,18 +222,27 @@ export default function TopUp() {
                   theme: 'stripe',
                   variables: {
                     colorPrimary: '#7c3aed',
+                  },
+                  rules: {
+                    '.Input': {
+                      borderColor: '#e5e7eb',
+                      borderRadius: '0.375rem',
+                    },
                   }
                 }
               }}
             >
-              <CheckoutPage amount={parseFloat(amount)} />
+              <CheckoutPage 
+                amount={parseFloat(amount)} 
+                onBack={handleBackToPaymentMethods}
+              />
             </Elements>
           ) : (
             <div className="text-center py-8">
               <p className="text-red-500">Payment initialization failed. Please try again.</p>
               <button
                 onClick={handleBackToPaymentMethods}
-                className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg"
+                className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
               >
                 Back to Payment Methods
               </button>

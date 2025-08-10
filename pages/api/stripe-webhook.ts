@@ -2,7 +2,6 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import Stripe from 'stripe';
 import { createClient } from '@libsql/client/web';
 
-// Initialize Stripe without API version
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export const config = {
@@ -52,12 +51,12 @@ export default async function handler(
     console.log('💰 PaymentIntent:', paymentIntent.id);
     console.log('📝 Metadata:', paymentIntent.metadata);
     
-    const driverId = paymentIntent.metadata.driverId;
+    const driverId = parseInt(paymentIntent.metadata.driverId || '0');
     const amount = paymentIntent.amount;
     
-    if (!driverId) {
-      console.error('❌ No driverId in metadata');
-      return res.status(400).json({ error: 'Missing driverId in metadata' });
+    if (!driverId || isNaN(driverId)) {
+      console.error('❌ Invalid driverId in metadata');
+      return res.status(400).json({ error: 'Missing or invalid driverId in metadata' });
     }
 
     const turso = createClient({
@@ -66,13 +65,10 @@ export default async function handler(
     });
 
     try {
-      // Test database connection
-      const testResult = await turso.execute('SELECT 1 as test');
-      if (testResult.rows[0].test !== 1) {
-        throw new Error('Database connection test failed');
-      }
+      // Enable foreign key constraints
+      await turso.execute("PRAGMA foreign_keys = ON");
 
-      // Check driver exists
+      // Verify driver exists
       const driverCheck = await turso.execute({
         sql: 'SELECT id FROM drivers WHERE id = ?',
         args: [driverId]
@@ -82,31 +78,24 @@ export default async function handler(
         throw new Error(`Driver with ID ${driverId} not found`);
       }
 
-      await turso.execute('BEGIN TRANSACTION');
+      // Use batch for atomic operations
+      const results = await turso.batch([
+        {
+          sql: 'UPDATE drivers SET balance = balance + ? WHERE id = ?',
+          args: [amount, driverId]
+        },
+        {
+          sql: `INSERT INTO driver_transactions 
+                (driver_id, amount, payment_intent_id, status) 
+                VALUES (?, ?, ?, ?)`,
+          args: [driverId, amount, paymentIntent.id, 'completed']
+        }
+      ]);
 
-      // Update balance
-      const updateResult = await turso.execute({
-        sql: 'UPDATE drivers SET balance = balance + ? WHERE id = ?',
-        args: [amount, driverId]
-      });
-
-      if (updateResult.rowsAffected !== 1) {
-        throw new Error(`Failed to update balance for driver ${driverId}`);
+      // Verify both operations succeeded
+      if (results[0].rowsAffected !== 1 || results[1].rowsAffected !== 1) {
+        throw new Error('Database operations partially failed');
       }
-
-      // Record transaction
-      const insertResult = await turso.execute({
-        sql: `INSERT INTO driver_transactions 
-              (driver_id, amount, payment_intent_id, status) 
-              VALUES (?, ?, ?, ?)`,
-        args: [driverId, amount, paymentIntent.id, 'completed']
-      });
-
-      if (insertResult.rowsAffected !== 1) {
-        throw new Error(`Failed to insert transaction record`);
-      }
-
-      await turso.execute('COMMIT');
 
       console.log(`✅ Updated balance for driver ${driverId} by $${amount/100}`);
       console.log(`✅ Recorded transaction for payment ${paymentIntent.id}`);
@@ -117,7 +106,6 @@ export default async function handler(
       });
 
     } catch (err) {
-      await turso.execute('ROLLBACK');
       console.error('❌ Database transaction failed:', err);
       
       if (err instanceof Error) {
