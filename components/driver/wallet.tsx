@@ -1,101 +1,76 @@
-// components/driver/wallet.tsx
 'use client';
 
 import { FiPlus, FiArrowUpRight } from 'react-icons/fi';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { createClient } from '@libsql/client/web';
 
 export default function Wallet() {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [driverId] = useState<number>(1); // In a real app, get from auth/session
-
-  const fetchWalletData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/driver/wallet?driverId=${driverId}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error('Failed to fetch wallet data');
-      const data = await res.json();
-      setBalance((data.balance ?? 0) / 100); // Convert cents to dollars
-      setTransactions(data.transactions ?? []);
-    } catch (error) {
-      console.error('Error fetching wallet data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    // Initial data fetch
-    fetchWalletData();
+    const fetchData = async () => {
+      try {
+        const turso = createClient({
+          url: process.env.TURSO_CONNECTION_URL!,
+          authToken: process.env.TURSO_AUTH_TOKEN!,
+        });
 
-    // Event listener for in-tab refresh
-    const handlePaymentSuccess = () => {
-      console.log('Received payment success event, refreshing data...');
-      fetchWalletData();
-    };
-
-    window.addEventListener('payment-success', handlePaymentSuccess);
-
-    // BroadcastChannel for cross-tab communication
-    let broadcastChannel: BroadcastChannel | null = null;
-    if (typeof BroadcastChannel !== 'undefined') {
-      broadcastChannel = new BroadcastChannel('balance-updates');
-      broadcastChannel.addEventListener('message', (event) => {
-        try {
-          const payload = event.data;
-          // If driverId in payload, ensure it matches; otherwise refresh anyway
-          if (!payload || !payload.driverId || payload.driverId === driverId) {
-            console.log('Received balance update broadcast, refreshing...', payload);
-            fetchWalletData();
-          }
-        } catch (err) {
-          console.log('Invalid broadcast payload, refreshing...', err);
-          fetchWalletData();
+        // In a real app, get driver ID from auth/session
+        const driverId = 1;
+        
+        // Fetch balance
+        const balanceResult = await turso.execute({
+          sql: 'SELECT balance FROM drivers WHERE id = ?',
+          args: [driverId]
+        });
+        
+        if (balanceResult.rows.length > 0) {
+          setBalance(balanceResult.rows[0].balance as number / 100); // Convert cents to dollars
         }
-      });
-    }
 
-    // Fallback polling every 30s
-    const pollInterval = setInterval(fetchWalletData, 30000);
-
-    return () => {
-      window.removeEventListener('payment-success', handlePaymentSuccess);
-      if (broadcastChannel) broadcastChannel.close();
-      clearInterval(pollInterval);
+        // Fetch transactions
+        const txResult = await turso.execute({
+          sql: 'SELECT * FROM driver_transactions WHERE driver_id = ? ORDER BY created_at DESC LIMIT 5',
+          args: [driverId]
+        });
+        
+        setTransactions(txResult.rows);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
     };
-  }, [driverId]);
+
+    fetchData();
+
+    // Set up polling for real-time updates
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
       <div className="space-y-6">
         {/* Balance Card */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-medium">Available Balance</h3>
-            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded-full">Live</span>
-          </div>
+          <h3 className="text-lg font-medium mb-1">Available Balance</h3>
           <div className="flex items-end justify-between">
             <div>
               <p className="text-3xl font-bold">
-                {loading ? (
-                  <span className="inline-block h-8 w-32 bg-purple-400 rounded animate-pulse"></span>
-                ) : (
-                  `$${balance.toFixed(2)}`
-                )}
+                {loading ? 'Loading...' : `$${balance.toFixed(2)}`}
               </p>
               <p className="text-purple-200 text-sm mt-1">
                 {balance === 0 ? 'Start by adding funds to your wallet' : 'Your current available balance'}
               </p>
             </div>
-            <Link
-              href="/driver/topup"
-              className="px-4 py-2 bg-white text-purple-600 rounded-lg text-sm font-medium hover:bg-opacity-90 transition flex items-center"
+            <Link 
+              href="/driver/topup" 
+              className="px-4 py-2 bg-white text-purple-600 rounded-lg text-sm font-medium hover:bg-opacity-90 transition"
             >
-              <FiPlus className="mr-1" />
               Top Up
             </Link>
           </div>
@@ -104,7 +79,7 @@ export default function Wallet() {
         {/* Payment Methods */}
         <div>
           <h3 className="text-lg font-semibold mb-4 text-gray-900">Payment Methods</h3>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Mastercard */}
             <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-purple-500 transition-colors">
               <div className="flex items-center">
@@ -119,7 +94,9 @@ export default function Wallet() {
                   <p className="text-sm text-gray-500">**** **** **** 4242</p>
                 </div>
               </div>
-              <button className="text-purple-600 hover:text-purple-800 text-sm font-medium">Manage</button>
+              <button className="text-purple-600 hover:text-purple-800 text-sm font-medium">
+                Manage
+              </button>
             </div>
 
             {/* EcoCash */}
@@ -133,7 +110,9 @@ export default function Wallet() {
                   <p className="text-sm text-gray-500">077*****89</p>
                 </div>
               </div>
-              <button className="text-purple-600 hover:text-purple-800 text-sm font-medium">Manage</button>
+              <button className="text-purple-600 hover:text-purple-800 text-sm font-medium">
+                Manage
+              </button>
             </div>
 
             {/* Add Payment Method */}
@@ -148,7 +127,9 @@ export default function Wallet() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Recent Transactions</h3>
-            <button className="text-sm text-purple-600 hover:text-purple-800 font-medium">View All</button>
+            <button className="text-sm text-purple-600 hover:text-purple-800 font-medium">
+              View All
+            </button>
           </div>
           <div className="space-y-3">
             {loading ? (
@@ -159,9 +140,11 @@ export default function Wallet() {
               </div>
             ) : transactions.length > 0 ? (
               transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                <div key={tx.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                   <div className="flex items-center">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${tx.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
+                      tx.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                    }`}>
                       {tx.amount > 0 ? (
                         <FiArrowUpRight className="w-5 h-5" />
                       ) : (
@@ -171,13 +154,11 @@ export default function Wallet() {
                       )}
                     </div>
                     <div>
-                      <h4 className="font-medium">{tx.amount > 0 ? 'Top Up' : 'Withdrawal'}</h4>
+                      <h4 className="font-medium">
+                        {tx.amount > 0 ? 'Top Up' : 'Withdrawal'}
+                      </h4>
                       <p className="text-sm text-gray-500">
-                        {new Date(tx.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        {new Date(tx.created_at).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -185,14 +166,16 @@ export default function Wallet() {
                     <p className={`font-medium ${tx.amount > 0 ? 'text-green-600' : 'text-purple-600'}`}>
                       {tx.amount > 0 ? '+' : '-'}${(Math.abs(tx.amount) / 100).toFixed(2)}
                     </p>
-                    <p className={`text-xs capitalize ${tx.status === 'completed' ? 'text-green-500' : tx.status === 'failed' ? 'text-red-500' : 'text-yellow-500'}`}>
+                    <p className="text-xs text-gray-500 capitalize">
                       {tx.status}
                     </p>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-4 text-gray-500">No transactions yet</div>
+              <div className="text-center py-4 text-gray-500">
+                No transactions yet
+              </div>
             )}
           </div>
         </div>

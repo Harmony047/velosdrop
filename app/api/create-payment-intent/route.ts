@@ -1,39 +1,33 @@
-// app/create-payment-intent/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {}); // no explicit API version
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const amount = body?.amount;
-    // In a real app, get driver ID from session/auth; for now we use body or fallback to 1
-    const driverId = body?.driverId ?? 1;
-
-    if (!amount || typeof amount !== "number" || Number.isNaN(amount) || amount <= 0) {
-      return NextResponse.json({ error: "Invalid amount (must be positive number in cents)" }, { status: 400 });
-    }
+    const { amount } = await request.json();
+    
+    // In a real app, get driver ID from session/auth
+    const driverId = 1;
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amount,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
-      metadata: {
+      metadata: { 
         driverId: String(driverId),
-      },
+        // Add any other relevant metadata
+      }
     });
 
-    console.log("🔔 Created PaymentIntent:", paymentIntent.id);
+    console.log('🔔 Created PaymentIntent:', paymentIntent.id);
 
-    return NextResponse.json({
+    return NextResponse.json({ 
       clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-    }, { status: 200 });
+      paymentIntentId: paymentIntent.id // Optional: return for debugging
+    });
   } catch (error) {
     console.error("❌ Payment Intent creation failed:", error);
     return NextResponse.json(
-      { error: `Internal Server Error: ${error instanceof Error ? error.message : String(error)}` },
+      { error: `Internal Server Error: ${error}` },
       { status: 500 }
     );
   }
