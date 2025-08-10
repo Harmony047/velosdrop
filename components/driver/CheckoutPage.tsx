@@ -1,10 +1,11 @@
+// components/driver/CheckoutPage.tsx
 'use client';
 
 import { useStripe, useElements, PaymentElement } from '@stripe/react-stripe-js';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-const CheckoutPage = ({ amount }: { amount: number }) => {
+const CheckoutPage = ({ amount, driverId }: { amount: number; driverId: number }) => {
   const stripe = useStripe();
   const elements = useElements();
   const [message, setMessage] = useState<string | null>(null);
@@ -21,7 +22,8 @@ const CheckoutPage = ({ amount }: { amount: number }) => {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}/driver/payment-success?amount=${amount}`,
+          // include driverId and amount in return_url so payment-success can broadcast
+          return_url: `${window.location.origin}/driver/payment-success?amount=${amount}&driverId=${driverId}`,
         },
       });
 

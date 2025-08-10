@@ -1,3 +1,4 @@
+// app/driver/topup/page.tsx
 'use client';
 
 import { FiDollarSign, FiCreditCard, FiArrowLeft, FiArrowUpRight } from 'react-icons/fi';
@@ -23,12 +24,13 @@ export default function TopUp() {
   const [selectedMethod, setSelectedMethod] = useState<'card' | 'mobile' | null>(null);
   const router = useRouter();
 
+  // Hard-coded driverId for now — replace with real auth/session driver id
+  const driverId = 1;
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setAmount(value);
-    
     if (error) setError('');
-    
     if (value) {
       const numValue = parseFloat(value);
       if (isNaN(numValue) || numValue < 2 || numValue > 100) {
@@ -42,32 +44,36 @@ export default function TopUp() {
       setError('Please enter an amount');
       return;
     }
-    
+
     const numValue = parseFloat(amount);
     if (isNaN(numValue)) {
       setError('Please enter a valid number');
       return;
     }
-    
+
     if (numValue < 2 || numValue > 100) {
       setError('Amount must be between $2 and $100');
       return;
     }
 
     try {
-      const response = await fetch('/api/create-payment-intent', {
+      const response = await fetch('/create-payment-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: convertToSubcurrency(numValue) }),
+        body: JSON.stringify({
+          amount: convertToSubcurrency(numValue), // in cents
+          driverId,
+        }),
       });
-      
+
       if (!response.ok) throw new Error('Failed to create payment intent');
-      
+
       const { clientSecret } = await response.json();
       setClientSecret(clientSecret);
       setSelectedMethod(method);
       setShowCheckout(true);
     } catch (err) {
+      console.error(err);
       setError('Failed to initialize payment. Please try again.');
     }
   };
@@ -82,7 +88,7 @@ export default function TopUp() {
       <div className="max-w-md mx-auto bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
           <div className="flex items-center space-x-4">
-            <button 
+            <button
               onClick={showCheckout ? handleBackToPaymentMethods : () => router.push('/driver/wallet')}
               className="hover:opacity-80 transition"
             >
@@ -116,9 +122,7 @@ export default function TopUp() {
                     max="100"
                     value={amount}
                     onChange={handleAmountChange}
-                    className={`focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 pr-12 py-3 border ${
-                      error ? 'border-red-500' : 'border-gray-300'
-                    } rounded-md text-gray-900`}
+                    className={`focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 pr-12 py-3 border ${error ? 'border-red-500' : 'border-gray-300'} rounded-md text-gray-900`}
                     placeholder="0.00"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -132,10 +136,8 @@ export default function TopUp() {
               <div>
                 <h3 className="text-sm font-medium text-gray-700 mb-3">Select Payment Method</h3>
                 <div className="space-y-3">
-                  <div 
-                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${
-                      selectedMethod === 'card' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'
-                    }`}
+                  <div
+                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${selectedMethod === 'card' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'}`}
                     onClick={() => handlePaymentMethodSelect('card')}
                   >
                     <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center text-white mr-4">
@@ -152,10 +154,8 @@ export default function TopUp() {
                     )}
                   </div>
 
-                  <div 
-                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${
-                      selectedMethod === 'mobile' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'
-                    }`}
+                  <div
+                    className={`flex items-center p-4 border rounded-lg cursor-pointer ${selectedMethod === 'mobile' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-500'}`}
                     onClick={() => handlePaymentMethodSelect('mobile')}
                   >
                     <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white mr-4">
@@ -175,7 +175,7 @@ export default function TopUp() {
               </div>
             </>
           ) : clientSecret ? (
-            <Elements 
+            <Elements
               stripe={stripePromise}
               options={{
                 clientSecret,
@@ -183,19 +183,16 @@ export default function TopUp() {
                   theme: 'stripe',
                   variables: {
                     colorPrimary: '#7c3aed',
-                  }
-                }
+                  },
+                },
               }}
             >
-              <CheckoutPage amount={parseFloat(amount)} />
+              <CheckoutPage amount={parseFloat(amount)} driverId={driverId} />
             </Elements>
           ) : (
             <div className="text-center py-8">
               <p className="text-red-500">Payment initialization failed. Please try again.</p>
-              <button
-                onClick={handleBackToPaymentMethods}
-                className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg"
-              >
+              <button onClick={handleBackToPaymentMethods} className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg">
                 Back to Payment Methods
               </button>
             </div>

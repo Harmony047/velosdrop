@@ -1,3 +1,4 @@
+// app/driver/payment-success/page.tsx
 'use client';
 
 import { useEffect } from 'react';
@@ -8,18 +9,31 @@ export default function PaymentSuccess() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const amount = searchParams?.get('amount') || '0.00';
+  const driverIdParam = searchParams?.get('driverId') || '1';
+  const driverId = Number(driverIdParam);
 
   useEffect(() => {
-    // Trigger balance refresh in wallet
+    // Trigger balance refresh in this tab
     window.dispatchEvent(new Event('payment-success'));
-    
+
+    // Broadcast to other tabs (same origin) so they refresh as well
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('balance-updates');
+        bc.postMessage({ driverId, amount: Math.round(parseFloat(amount) * 100) });
+        bc.close();
+      } catch (err) {
+        console.warn('BroadcastChannel post failed', err);
+      }
+    }
+
     // Redirect to wallet after 5 seconds
     const timer = setTimeout(() => {
       router.push('/driver/wallet');
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [router]);
+  }, [router, amount, driverId]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
