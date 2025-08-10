@@ -2,10 +2,8 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import Stripe from 'stripe';
 import { createClient } from '@libsql/client/web';
 
-// Initialize Stripe without API version (uses latest)
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-// Verify environment variables
 if (!process.env.TURSO_CONNECTION_URL || !process.env.TURSO_AUTH_TOKEN) {
   throw new Error('Missing Turso database credentials');
 }
@@ -17,7 +15,7 @@ const turso = createClient({
 
 export const config = {
   api: {
-    bodyParser: false, // Required for webhooks
+    bodyParser: false,
   },
 };
 
@@ -54,7 +52,6 @@ export default async function handler(
     return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 
-  // Handle successful payment
   if (event.type === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object as Stripe.PaymentIntent;
     
@@ -62,7 +59,7 @@ export default async function handler(
     console.log('Metadata:', paymentIntent.metadata);
     
     const driverId = paymentIntent.metadata.driverId;
-    const amount = paymentIntent.amount; // Amount in cents
+    const amount = paymentIntent.amount;
     
     if (!driverId) {
       console.error('No driverId in metadata');
@@ -70,27 +67,34 @@ export default async function handler(
     }
 
     try {
-      // 1. Update driver balance
-      await turso.execute({
-        sql: 'UPDATE drivers SET balance = balance + ? WHERE id = ?',
-        args: [amount, driverId]
-      });
-
-      // 2. Record transaction
-      await turso.execute({
-        sql: `INSERT INTO driver_transactions 
-              (driver_id, amount, payment_intent_id, status, created_at) 
-              VALUES (?, ?, ?, ?, ?)`,
-        args: [
-          driverId, 
-          amount, 
-          paymentIntent.id, 
-          'completed', 
-          new Date().toISOString()
-        ]
-      });
+      // Start transaction with correct typing
+      await turso.batch([
+        {
+          sql: 'UPDATE drivers SET balance = balance + ? WHERE id = ?',
+          args: [amount, driverId]
+        },
+        {
+          sql: `INSERT INTO driver_transactions 
+                (driver_id, amount, payment_intent_id, status, created_at) 
+                VALUES (?, ?, ?, ?, ?)`,
+          args: [
+            driverId, 
+            amount, 
+            paymentIntent.id, 
+            'completed', 
+            new Date().toISOString()
+          ]
+        }
+      ]);
 
       console.log(`Updated balance for driver ${driverId} by $${amount/100}`);
+
+      // Broadcast update to all clients
+      if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('balance-updates');
+        channel.postMessage({ driverId, amount });
+        channel.close();
+      }
 
     } catch (err) {
       console.error('Database error:', err);

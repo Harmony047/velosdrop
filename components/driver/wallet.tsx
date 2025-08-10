@@ -9,68 +9,106 @@ export default function Wallet() {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [driverId] = useState<number>(1); // In a real app, get from auth/session
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const turso = createClient({
-          url: process.env.TURSO_CONNECTION_URL!,
-          authToken: process.env.TURSO_AUTH_TOKEN!,
-        });
+  const fetchWalletData = async () => {
+    try {
+      const turso = createClient({
+        url: process.env.TURSO_CONNECTION_URL!,
+        authToken: process.env.TURSO_AUTH_TOKEN!,
+      });
 
-        // In a real app, get driver ID from auth/session
-        const driverId = 1;
-        
-        // Fetch balance
-        const balanceResult = await turso.execute({
+      // Fetch balance and transactions in parallel
+      const [balanceResult, txResult] = await Promise.all([
+        turso.execute({
           sql: 'SELECT balance FROM drivers WHERE id = ?',
           args: [driverId]
-        });
-        
-        if (balanceResult.rows.length > 0) {
-          setBalance(balanceResult.rows[0].balance as number / 100); // Convert cents to dollars
-        }
-
-        // Fetch transactions
-        const txResult = await turso.execute({
+        }),
+        turso.execute({
           sql: 'SELECT * FROM driver_transactions WHERE driver_id = ? ORDER BY created_at DESC LIMIT 5',
           args: [driverId]
-        });
-        
-        setTransactions(txResult.rows);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
+        })
+      ]);
+
+      if (balanceResult.rows.length > 0) {
+        setBalance(balanceResult.rows[0].balance as number / 100); // Convert cents to dollars
       }
+
+      setTransactions(txResult.rows);
+    } catch (error) {
+      console.error('Error fetching wallet data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial data fetch
+    fetchWalletData();
+
+    // Set up event listeners for real-time updates
+    const handlePaymentSuccess = () => {
+      console.log('Received payment success event, refreshing data...');
+      fetchWalletData();
     };
 
-    fetchData();
+    // Listen for custom events
+    window.addEventListener('payment-success', handlePaymentSuccess);
 
-    // Set up polling for real-time updates
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    // Set up BroadcastChannel for cross-tab communication
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      broadcastChannel = new BroadcastChannel('balance-updates');
+      broadcastChannel.addEventListener('message', (event) => {
+        if (event.data.driverId === driverId) {
+          console.log('Received balance update broadcast, refreshing...');
+          fetchWalletData();
+        }
+      });
+    }
+
+    // Set up polling as fallback (every 30 seconds)
+    const pollInterval = setInterval(fetchWalletData, 30000);
+
+    // Cleanup function
+    return () => {
+      window.removeEventListener('payment-success', handlePaymentSuccess);
+      if (broadcastChannel) {
+        broadcastChannel.close();
+      }
+      clearInterval(pollInterval);
+    };
+  }, [driverId]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
       <div className="space-y-6">
         {/* Balance Card */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
-          <h3 className="text-lg font-medium mb-1">Available Balance</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-medium">Available Balance</h3>
+            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded-full">
+              Live
+            </span>
+          </div>
           <div className="flex items-end justify-between">
             <div>
               <p className="text-3xl font-bold">
-                {loading ? 'Loading...' : `$${balance.toFixed(2)}`}
+                {loading ? (
+                  <span className="inline-block h-8 w-32 bg-purple-400 rounded animate-pulse"></span>
+                ) : (
+                  `$${balance.toFixed(2)}`
+                )}
               </p>
               <p className="text-purple-200 text-sm mt-1">
                 {balance === 0 ? 'Start by adding funds to your wallet' : 'Your current available balance'}
               </p>
             </div>
-            <Link 
-              href="/driver/topup" 
-              className="px-4 py-2 bg-white text-purple-600 rounded-lg text-sm font-medium hover:bg-opacity-90 transition"
+            <Link
+              href="/driver/topup"
+              className="px-4 py-2 bg-white text-purple-600 rounded-lg text-sm font-medium hover:bg-opacity-90 transition flex items-center"
             >
+              <FiPlus className="mr-1" />
               Top Up
             </Link>
           </div>
@@ -79,7 +117,7 @@ export default function Wallet() {
         {/* Payment Methods */}
         <div>
           <h3 className="text-lg font-semibold mb-4 text-gray-900">Payment Methods</h3>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Mastercard */}
             <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-purple-500 transition-colors">
               <div className="flex items-center">
@@ -140,7 +178,7 @@ export default function Wallet() {
               </div>
             ) : transactions.length > 0 ? (
               transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                <div key={tx.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   <div className="flex items-center">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
                       tx.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
@@ -158,7 +196,11 @@ export default function Wallet() {
                         {tx.amount > 0 ? 'Top Up' : 'Withdrawal'}
                       </h4>
                       <p className="text-sm text-gray-500">
-                        {new Date(tx.created_at).toLocaleDateString()}
+                        {new Date(tx.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
                       </p>
                     </div>
                   </div>
@@ -166,7 +208,10 @@ export default function Wallet() {
                     <p className={`font-medium ${tx.amount > 0 ? 'text-green-600' : 'text-purple-600'}`}>
                       {tx.amount > 0 ? '+' : '-'}${(Math.abs(tx.amount) / 100).toFixed(2)}
                     </p>
-                    <p className="text-xs text-gray-500 capitalize">
+                    <p className={`text-xs capitalize ${
+                      tx.status === 'completed' ? 'text-green-500' : 
+                      tx.status === 'failed' ? 'text-red-500' : 'text-yellow-500'
+                    }`}>
                       {tx.status}
                     </p>
                   </div>
