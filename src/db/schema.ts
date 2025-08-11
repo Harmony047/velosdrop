@@ -1,11 +1,23 @@
+// src/db/schema.ts
+import { sql } from 'drizzle-orm';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
 export type LocationData = {
   longitude: number;
   latitude: number;
 } | null;
 
-import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+// Add customers table
+export const customersTable = sqliteTable('customers', {
+  id: text('id').primaryKey().notNull(),
+  name: text('name'),
+  email: text('email').unique().notNull(),
+  image: text('image'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
 
+// Existing drivers table
 export const driversTable = sqliteTable('drivers', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }).notNull(),
   phoneNumber: text('phone_number').notNull(),
@@ -14,24 +26,15 @@ export const driversTable = sqliteTable('drivers', {
   email: text('email').unique().notNull(),
   password: text('password').notNull(),
   profilePictureUrl: text('profile_picture_url'),
-  balance: integer('balance').default(0).notNull(), // Added balance field
-
-  // Vehicle details
+  balance: integer('balance').default(0).notNull(),
   vehicleType: text('vehicle_type').notNull(),
   carName: text('car_name').notNull(),
   numberPlate: text('number_plate').notNull(),
-
-  // License details
   licenseExpiry: text('license_expiry').notNull(),
-
-  // Registration details
   registrationExpiry: text('registration_expiry').notNull(),
-
-  // Online status
   isOnline: integer('is_online', { mode: 'boolean' }).default(false).notNull(),
   lastLocation: text('last_location').$type<LocationData>().default(null),
   lastOnline: text('last_online').default(sql`CURRENT_TIMESTAMP`).notNull(),
-
   status: text('status').default('pending').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -40,12 +43,14 @@ export const driversTable = sqliteTable('drivers', {
 export const driverTransactions = sqliteTable('driver_transactions', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }).notNull(),
   driver_id: integer('driver_id').notNull().references(() => driversTable.id),
-  amount: integer('amount').notNull(), // in cents
+  amount: integer('amount').notNull(),
   payment_intent_id: text('payment_intent_id').notNull(),
-  status: text('status').notNull(), // 'completed', 'failed', 'pending'
+  status: text('status').notNull(),
   created_at: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export type InsertCustomer = typeof customersTable.$inferInsert;
+export type SelectCustomer = typeof customersTable.$inferSelect;
 export type InsertDriver = typeof driversTable.$inferInsert;
 export type SelectDriver = typeof driversTable.$inferSelect;
 
