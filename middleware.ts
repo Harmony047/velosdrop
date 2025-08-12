@@ -1,23 +1,32 @@
-import { getToken } from "next-auth/jwt";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-export async function middleware(req: NextRequest) {
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
+const isPublicRoute = createRouteMatcher([
+  '/',
+  '/customer/sign-in(.*)',
+  '/customer/sign-up(.*)',
+  '/customer/sso-callback(.*)',
+  '/api(.*)'
+]);
 
-  // Protect /customer/dashboard routes
-  if (!token && req.nextUrl.pathname.startsWith("/customer/dashboard")) {
-    return NextResponse.redirect(
-      new URL("/customer/auth/login", req.url)
-    );
+export default clerkMiddleware(async (auth, req) => {
+  // Get the auth state
+  const authState = await auth();
+  
+  if (!isPublicRoute(req)) {
+    // Check if user is authenticated
+    if (!authState.userId) {
+      // Redirect to sign-in page
+      const signInUrl = new URL('/customer/sign-in', req.url);
+      signInUrl.searchParams.set('redirect_url', req.url);
+      return Response.redirect(signInUrl);
+    }
   }
-
-  return NextResponse.next();
-}
+});
 
 export const config = {
-  matcher: ["/customer/dashboard/:path*"],
+  matcher: [
+    '/((?!.+\\..*|_next).*)',
+    '/',
+    '/(api|trpc)(.*)'
+  ],
 };
