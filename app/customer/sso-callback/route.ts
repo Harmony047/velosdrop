@@ -1,18 +1,21 @@
 import { currentUser } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Get the current user
     const user = await currentUser();
     
     if (!user) {
-      return NextResponse.redirect('/customer/sign-in');
+      const signInUrl = new URL('/customer/sign-in', request.url);
+      return NextResponse.redirect(signInUrl);
     }
 
-    return NextResponse.redirect('/customer/dashboard');
+    const dashboardUrl = new URL('/customer/dashboard', request.url);
+    return NextResponse.redirect(dashboardUrl);
   } catch (error) {
     console.error('SSO callback error:', error);
-    return NextResponse.redirect('/customer/sign-in?error=authentication_failed');
+    const signInUrl = new URL('/customer/sign-in', request.url);
+    signInUrl.searchParams.set('error', 'authentication_failed');
+    return NextResponse.redirect(signInUrl);
   }
 }
